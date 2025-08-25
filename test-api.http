@@ -1,0 +1,117 @@
+### 测试API端点
+### 使用REST Client插件或Postman测试
+
+### 1. 用户登录
+POST http://localhost:5000/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "admin123"
+}
+
+### 2. 获取所有用户 (需要token)
+GET http://localhost:5000/api/users
+Authorization: Bearer YOUR_TOKEN_HERE
+
+### 3. 创建新用户
+POST http://localhost:5000/api/users
+Authorization: Bearer YOUR_TOKEN_HERE
+Content-Type: application/json
+
+{
+  "name": "Test User",
+  "username": "testuser",
+  "password": "test123"
+}
+
+### 4. 获取所有客户
+GET http://localhost:5000/api/customers
+Authorization: Bearer YOUR_TOKEN_HERE
+
+### 5. 创建新客户
+POST http://localhost:5000/api/customers
+Authorization: Bearer YOUR_TOKEN_HERE
+Content-Type: application/json
+
+{
+  "id": "C006",
+  "rfid": "RF67890",
+  "name": "Test Company"
+}
+
+### 6. 获取所有称重记录
+GET http://localhost:5000/api/weights
+Authorization: Bearer YOUR_TOKEN_HERE
+
+### 7. 创建称重记录
+POST http://localhost:5000/api/weights
+Authorization: Bearer YOUR_TOKEN_HERE
+Content-Type: application/json
+
+{
+  "customer_id": "C001",
+  "customer_name": "ABC Corp",
+  "waste_type": "Paper",
+  "bin_type": "240L",
+  "total_weight": 150.5,
+  "bin_weight": 5.5,
+  "net_weight": 145.0,
+  "image_url": "/uploads/test-image.jpg"
+}
+
+### 8. 获取特定客户的称重记录
+GET http://localhost:5000/api/weights/customer/C001
+Authorization: Bearer YOUR_TOKEN_HERE
+
+### 9. 上传图片
+POST http://localhost:5000/api/upload
+Authorization: Bearer YOUR_TOKEN_HERE
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="image"; filename="test.jpg"
+Content-Type: image/jpeg
+
+< ./test-image.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### 10. 外部系统API - 创建称重记录
+POST http://localhost:5000/api/external/weight-records
+X-API-KEY: ss-api-2023-external-system-key
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="customer_id"
+
+C001
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="total_weight"
+
+125.7
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="weighing_time"
+
+2024-01-15T10:30:00Z
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="image"; filename="external-test.jpg"
+Content-Type: image/jpeg
+
+< ./test-image.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### 11. 外部系统API - 获取称重记录
+GET http://localhost:5000/api/external/weight-records/WEIGH_RECORD_ID_HERE
+X-API-KEY: ss-api-2023-external-system-key
+
+### 12. 外部系统API - 更新称重记录
+PATCH http://localhost:5000/api/external/weight-records/WEIGH_RECORD_ID_HERE
+X-API-KEY: ss-api-2023-external-system-key
+Content-Type: application/json
+
+{
+  "waste_type": "Plastic",
+  "bin_type": "120L",
+  "bin_weight": 3.5,
+  "net_weight": 122.2
+}
