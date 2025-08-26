@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PlusCircle, Search, Filter, Trash2, Edit, Image, AlertCircle, Copy } from 'lucide-react';
 import { format } from 'date-fns';
 import * as api from '../services/api';
+import { API_CONFIG } from '../config';
 
 function WeightRecordModal({ isOpen, onClose, record, onSave, customers }) {
   const [formData, setFormData] = useState({
@@ -292,7 +293,7 @@ function ImagePreviewModal({ imageUrl, onClose }) {
   // Check if the image URL is relative or absolute
   const fullUrl = imageUrl.startsWith('http') 
     ? imageUrl 
-    : `http://localhost:8080${imageUrl}`;
+    : `${API_CONFIG.backendBaseUrl}${imageUrl}`;
   
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50" onClick={onClose}>
@@ -350,15 +351,28 @@ function WeightManagement() {
   const [error, setError] = useState('');
   const [filterWasteType, setFilterWasteType] = useState('');
   
+  // Pagination state
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 50,
+    totalCount: 0,
+    totalPages: 1
+  });
+  
   // Fetch weight records and customers
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
         
-        // Fetch weight records
-        const recordsResponse = await api.getWeightRecords();
-        setRecords(recordsResponse.data);
+        // Fetch weight records with pagination
+        const recordsResponse = await api.getWeightRecords(pagination.page, pagination.limit);
+        setRecords(recordsResponse.data.records);
+        setPagination(prev => ({
+          ...prev,
+          totalCount: recordsResponse.data.pagination.totalCount,
+          totalPages: recordsResponse.data.pagination.totalPages
+        }));
         
         // Fetch customers for the dropdown in the form
         const customersResponse = await api.getCustomers();
@@ -374,7 +388,7 @@ function WeightManagement() {
     };
     
     fetchData();
-  }, []);
+  }, [pagination.page, pagination.limit]);
   
   const handleAddNew = () => {
     setCurrentRecord(null);
@@ -390,7 +404,19 @@ function WeightManagement() {
     if (window.confirm('Are you sure you want to delete this record?')) {
       try {
         await api.deleteWeightRecord(id);
-        setRecords(records.filter(record => record.id !== id));
+        
+        // Refresh current page data
+        const recordsResponse = await api.getWeightRecords(pagination.page, pagination.limit);
+        setRecords(recordsResponse.data.records);
+        setPagination(prev => ({
+          ...prev,
+          totalCount: recordsResponse.data.pagination.totalCount,
+          totalPages: recordsResponse.data.pagination.totalPages,
+          // If current page is now empty and not the first page, go to previous page
+          page: recordsResponse.data.records.length === 0 && pagination.page > 1 
+            ? pagination.page - 1 
+            : pagination.page
+        }));
       } catch (err) {
         setError('Failed to delete record. Please try again.');
         console.error('Error deleting record:', err);
@@ -402,15 +428,21 @@ function WeightManagement() {
     try {
       if (currentRecord) {
         // Edit existing record
-        const response = await api.updateWeightRecord(currentRecord.id, formData);
-        setRecords(records.map(record => 
-          record.id === currentRecord.id ? response.data : record
-        ));
+        await api.updateWeightRecord(currentRecord.id, formData);
       } else {
         // Add new record
-        const response = await api.createWeightRecord(formData);
-        setRecords([response.data, ...records]);
+        await api.createWeightRecord(formData);
       }
+      
+      // Refresh current page data
+      const recordsResponse = await api.getWeightRecords(pagination.page, pagination.limit);
+      setRecords(recordsResponse.data.records);
+      setPagination(prev => ({
+        ...prev,
+        totalCount: recordsResponse.data.pagination.totalCount,
+        totalPages: recordsResponse.data.pagination.totalPages
+      }));
+      
       setIsModalOpen(false);
     } catch (err) {
       console.error('Error saving record:', err);
@@ -425,8 +457,20 @@ function WeightManagement() {
   const handleFilterChange = (e) => {
     setFilterWasteType(e.target.value);
   };
+
+  const handlePageChange = (newPage) => {
+    setPagination(prev => ({ ...prev, page: newPage }));
+  };
+
+  const handleLimitChange = (newLimit) => {
+    setPagination(prev => ({ 
+      ...prev, 
+      limit: parseInt(newLimit), 
+      page: 1 // Reset to first page when changing limit
+    }));
+  };
   
-  // Apply filters and search
+  // Apply filters and search (now applied to current page records)
   const filteredRecords = records.filter(record => {
     const matchesSearch = 
       (record.customer_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -505,76 +549,124 @@ function WeightManagement() {
             <p className="mt-2 text-gray-600">Loading records...</p>
           </div>
         ) : (
-          <div className="table-container">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>WeighRecordId</th>
-                  <th>Customer ID</th>
-                  <th>Customer Name</th>
-                  <th>Waste Type</th>
-                  <th>Bin Type</th>
-                  <th>Total Weight (kg)</th>
-                  <th>Bin Weight (kg)</th>
-                  <th>Net Weight (kg)</th>
-                  <th>Weighing Time</th>
-                  <th>Image</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredRecords.length > 0 ? (
-                  filteredRecords.map((record) => (
-                    <tr key={record.id}>
-                      <td className="flex items-center">
-                        <span className="truncate max-w-[100px] mr-1" title={record.weighRecordId}>
-                          {record.weighRecordId?.substring(0, 8)}...
-                        </span>
-                        <WeighRecordIdCopyButton weighRecordId={record.weighRecordId} />
-                      </td>
-                      <td>{record.customer_id}</td>
-                      <td>{record.customer_name}</td>
-                      <td>{record.waste_type}</td>
-                      <td>{record.bin_type}</td>
-                      <td>{parseFloat(record.total_weight).toFixed(1)}</td>
-                      <td>{parseFloat(record.bin_weight).toFixed(1)}</td>
-                      <td>{parseFloat(record.net_weight).toFixed(1)}</td>
-                      <td>{format(new Date(record.weighing_time), 'MMM dd, yyyy HH:mm')}</td>
-                      <td>
-                        {record.image_url && (
+          <div>
+            <div className="table-container">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>WeighRecordId</th>
+                    <th>Customer ID</th>
+                    <th>Customer Name</th>
+                    <th>Waste Type</th>
+                    <th>Bin Type</th>
+                    <th>Total Weight (kg)</th>
+                    <th>Bin Weight (kg)</th>
+                    <th>Net Weight (kg)</th>
+                    <th>Weighing Time</th>
+                    <th>Image</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredRecords.length > 0 ? (
+                    filteredRecords.map((record) => (
+                      <tr key={record.id}>
+                        <td className="flex items-center">
+                          <span className="truncate max-w-[100px] mr-1" title={record.weighRecordId}>
+                            {record.weighRecordId?.substring(0, 8)}...
+                          </span>
+                          <WeighRecordIdCopyButton weighRecordId={record.weighRecordId} />
+                        </td>
+                        <td>{record.customer_id}</td>
+                        <td>{record.customer_name}</td>
+                        <td>{record.waste_type}</td>
+                        <td>{record.bin_type}</td>
+                        <td>{parseFloat(record.total_weight).toFixed(1)}</td>
+                        <td>{parseFloat(record.bin_weight).toFixed(1)}</td>
+                        <td>{parseFloat(record.net_weight).toFixed(1)}</td>
+                        <td>{format(new Date(record.weighing_time), 'MMM dd, yyyy HH:mm')}</td>
+                        <td>
+                          {record.image_url && (
+                            <button 
+                              onClick={() => handleImageClick(record.image_url)}
+                              className="text-primary hover:text-primary-dark"
+                            >
+                              <Image className="h-5 w-5" />
+                            </button>
+                          )}
+                        </td>
+                        <td className="flex space-x-2">
                           <button 
-                            onClick={() => handleImageClick(record.image_url)}
-                            className="text-primary hover:text-primary-dark"
+                            onClick={() => handleEdit(record)}
+                            className="text-blue-600 hover:text-blue-800"
                           >
-                            <Image className="h-5 w-5" />
+                            <Edit className="h-5 w-5" />
                           </button>
-                        )}
-                      </td>
-                      <td className="flex space-x-2">
-                        <button 
-                          onClick={() => handleEdit(record)}
-                          className="text-blue-600 hover:text-blue-800"
-                        >
-                          <Edit className="h-5 w-5" />
-                        </button>
-                        <button 
-                          onClick={() => handleDelete(record.id)}
-                          className="text-red-600 hover:text-red-800"
-                        >
-                          <Trash2 className="h-5 w-5" />
-                        </button>
+                          <button 
+                            onClick={() => handleDelete(record.id)}
+                            className="text-red-600 hover:text-red-800"
+                          >
+                            <Trash2 className="h-5 w-5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="11" className="text-center py-4">
+                        No records found
                       </td>
                     </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan="11" className="text-center py-4">
-                      No records found
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            
+            {/* Pagination Controls */}
+            {pagination.totalPages > 1 && (
+              <div className="mt-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-gray-700">Show:</label>
+                  <select
+                    value={pagination.limit}
+                    onChange={(e) => handleLimitChange(e.target.value)}
+                    className="input text-sm py-1 px-2 h-8"
+                  >
+                    <option value={10}>10</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                  <span className="text-sm text-gray-700">per page</span>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handlePageChange(pagination.page - 1)}
+                    disabled={!pagination.hasPrev || loading}
+                    className="btn btn-secondary text-sm py-1 px-3 h-8 disabled:opacity-50"
+                  >
+                    Previous
+                  </button>
+                  
+                  <span className="text-sm text-gray-700">
+                    Page {pagination.page} of {pagination.totalPages}
+                  </span>
+                  
+                  <button
+                    onClick={() => handlePageChange(pagination.page + 1)}
+                    disabled={!pagination.hasNext || loading}
+                    className="btn btn-secondary text-sm py-1 px-3 h-8 disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </div>
+                
+                <div className="text-sm text-gray-700">
+                  Total: {pagination.totalCount} records
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -1,10 +1,11 @@
 import axios from 'axios';
 import { startOfWeek, endOfWeek, format, parseISO, addDays } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
+import { API_CONFIG } from '../config';
 
 // Create an axios instance with default config
 const api = axios.create({
-  baseURL: 'http://localhost:8080/api',
+  baseURL: API_CONFIG.baseUrl,
   headers: {
     'Content-Type': 'application/json'
   }
@@ -42,85 +43,83 @@ api.interceptors.response.use(
 
 // Dashboard endpoints
 export const getDashboardTodayStats = () => {
-  return api.get('/dashboard/today-stats');
+  return api.get(API_CONFIG.endpoints.todayStats);
 };
 
 export const getDashboardWeeklyCustomers = (limit = 15) => {
-  return api.get(`/dashboard/weekly-customers?limit=${limit}`);
+  return api.get(`${API_CONFIG.endpoints.weeklyCustomers}?limit=${limit}`);
 };
-
-
 
 // Auth endpoints
 export const login = (username, password) => {
-  return api.post('/auth/login', { username, password });
+  return api.post(API_CONFIG.endpoints.login, { username, password });
 };
 
 // User endpoints
 export const getUsers = () => {
-  return api.get('/users');
+  return api.get(API_CONFIG.endpoints.users);
 };
 
 export const getUser = (id) => {
-  return api.get(`/users/${id}`);
+  return api.get(API_CONFIG.endpoints.user(id));
 };
 
 export const createUser = (userData) => {
-  return api.post('/users', userData);
+  return api.post(API_CONFIG.endpoints.users, userData);
 };
 
 export const updateUser = (id, userData) => {
-  return api.put(`/users/${id}`, userData);
+  return api.put(API_CONFIG.endpoints.user(id), userData);
 };
 
 export const deleteUser = (id) => {
-  return api.delete(`/users/${id}`);
+  return api.delete(API_CONFIG.endpoints.user(id));
 };
 
 // Customer endpoints
 export const getCustomers = () => {
-  return api.get('/customers');
+  return api.get(API_CONFIG.endpoints.customers);
 };
 
 export const getCustomer = (id) => {
-  return api.get(`/customers/${id}`);
+  return api.get(API_CONFIG.endpoints.customer(id));
 };
 
 export const createCustomer = (customerData) => {
-  return api.post('/customers', customerData);
+  return api.post(API_CONFIG.endpoints.customers, customerData);
 };
 
 export const updateCustomer = (id, customerData) => {
-  return api.put(`/customers/${id}`, customerData);
+  return api.put(API_CONFIG.endpoints.customer(id), customerData);
 };
 
 export const deleteCustomer = (id) => {
-  return api.delete(`/customers/${id}`);
+  return api.delete(API_CONFIG.endpoints.customer(id));
 };
 
 // Weight record endpoints
-export const getWeightRecords = () => {
-  return api.get('/weights');
+export const getWeightRecords = (page = 1, limit = 50) => {
+  return api.get(`${API_CONFIG.endpoints.weights}?page=${page}&limit=${limit}`);
 };
 
 export const getCustomerWeightRecords = (customerId) => {
-  return api.get(`/weights/customer/${customerId}`);
+  return api.get(API_CONFIG.endpoints.customerWeights(customerId));
 };
 
 export const getWeightRecord = (id) => {
-  return api.get(`/weights/${id}`);
+  return api.get(API_CONFIG.endpoints.weight(id));
 };
 
 export const createWeightRecord = (recordData) => {
-  return api.post('/weights', recordData);
+  return api.post(API_CONFIG.endpoints.weights, recordData);
 };
 
 export const updateWeightRecord = (id, recordData) => {
-  return api.put(`/weights/${id}`, recordData);
+  return api.put(API_CONFIG.endpoints.weight(id), recordData);
 };
 
 export const deleteWeightRecord = (id) => {
-  return api.delete(`/weights/${id}`);
+  return api.delete(API_CONFIG.endpoints.weight(id));
 };
 
 // File upload
@@ -128,10 +127,9 @@ export const uploadImage = (file) => {
   const formData = new FormData();
   formData.append('image', file);
   
-  return axios.post('http://localhost:8080/api/upload', formData, {
+  return api.post(API_CONFIG.endpoints.upload, formData, {
     headers: {
-      'Content-Type': 'multipart/form-data',
-      'Authorization': `Bearer ${localStorage.getItem('token')}`
+      'Content-Type': 'multipart/form-data'
     }
   });
 };

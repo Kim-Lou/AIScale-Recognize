@@ -50,29 +50,24 @@ const upload = multer({
  * 
  * @apiHeader {String} X-API-KEY External system API key for authentication
  * 
- * @apiBody {String} customer_id The customer ID
- * @apiBody {Number} total_weight The total weight in kg
+ * @apiBody {String} rfid The RFID number of the customer (required)
+ * @apiBody {Number} total_weight The total weight in kg (required)
  * @apiBody {String} [weighing_time] Optional ISO datetime string (defaults to current time)
  * @apiBody {File} [image] Optional image file of the weighing process
  * 
- * @apiSuccess {Object} weightRecord The created weight record
- * @apiSuccess {Number} weightRecord.id Internal record ID
- * @apiSuccess {String} weightRecord.weighRecordId Globally unique record identifier
- * @apiSuccess {String} weightRecord.customer_id Customer ID
- * @apiSuccess {String} weightRecord.customer_name Customer name
- * @apiSuccess {Number} weightRecord.total_weight Total weight in kg
- * @apiSuccess {String} weightRecord.weighing_time ISO datetime of weighing
- * @apiSuccess {String} [weightRecord.image_url] URL to the weighing image
+ * @apiSuccess {String} rfid Customer's RFID number
+ * @apiSuccess {String} weighRecordId Globally unique record identifier
+ * @apiSuccess {String} [image_url] URL to the weighing image
  */
 router.post('/weight-records', authenticateApiKey, upload.single('image'), async (req, res) => {
   try {
-    const { customer_id, total_weight, weighing_time } = req.body;
+    const { rfid, total_weight, weighing_time } = req.body;
     
     // Validate required fields
-    if (!customer_id || !total_weight) {
+    if (!rfid || !total_weight) {
       return res.status(400).json({ 
         error: 'Missing required fields',
-        required: ['customer_id', 'total_weight']
+        required: ['rfid', 'total_weight']
       });
     }
     
@@ -84,10 +79,29 @@ router.post('/weight-records', authenticateApiKey, upload.single('image'), async
     
     const db = getDb();
     
-    // Check if customer exists
-    const customer = db.prepare('SELECT id, name FROM customers WHERE id = ?').get(customer_id);
+    // Check if customer exists by RFID
+    let customer = db.prepare('SELECT id, name FROM customers WHERE rfid = ?').get(rfid);
+    
+    // If customer doesn't exist, create a new one with C-prefixed ID
     if (!customer) {
-      return res.status(404).json({ error: 'Customer not found' });
+      // Get the current count of customers to generate the next ID
+      const customerCount = db.prepare('SELECT COUNT(*) as count FROM customers').get().count;
+      
+      // Generate new customer ID with format C + 4-digit number
+      const newCustomerId = `C${String(customerCount + 1).padStart(4, '0')}`;
+      
+      // Create new customer with default name as 'New Customer'
+      db.prepare(`
+        INSERT INTO customers (id, rfid, name)
+        VALUES (?, ?, ?)
+      `).run(
+        newCustomerId,
+        rfid,
+        `Customer ${newCustomerId}`
+      );
+      
+      // Get the newly created customer
+      customer = db.prepare('SELECT id, name FROM customers WHERE id = ?').get(newCustomerId);
     }
     
     // Process image file if uploaded
@@ -111,7 +125,7 @@ router.post('/weight-records', authenticateApiKey, upload.single('image'), async
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       weighRecordId,
-      customer_id,
+      customer.id,
       customer.name,
       'Unclassified', // Default waste type
       'Unknown',      // Default bin type
@@ -130,7 +144,12 @@ router.post('/weight-records', authenticateApiKey, upload.single('image'), async
       WHERE id = ?
     `).get(result.lastInsertRowid);
     
-    res.status(201).json(newWeightRecord);
+    // Return only the required fields in the response
+    res.status(201).json({
+      rfid: rfid,
+      weighRecordId: newWeightRecord.weighRecordId,
+      image_url: newWeightRecord.image_url
+    });
   } catch (error) {
     console.error('Error creating weight record:', error);
     res.status(500).json({ error: 'Internal server error' });

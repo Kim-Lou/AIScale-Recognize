@@ -5,18 +5,46 @@ import { v4 as uuidv4 } from 'uuid';
 
 const router = express.Router();
 
-// Get all weight records
+// Get all weight records with pagination
 router.get('/', authenticateToken, (req, res) => {
   try {
     const db = getDb();
+    
+    // Parse pagination parameters
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = (page - 1) * limit;
+    
+    // Validate parameters
+    if (page < 1 || limit < 1 || limit > 1000) {
+      return res.status(400).json({ 
+        message: 'Invalid pagination parameters. Page must be >= 1, limit must be between 1 and 1000' 
+      });
+    }
+    
+    // Get total count for pagination metadata
+    const totalCount = db.prepare('SELECT COUNT(*) as count FROM weight_records').get().count;
+    
+    // Get paginated records
     const weightRecords = db.prepare(`
       SELECT id, weighRecordId, customer_id, customer_name, waste_type, bin_type, 
              total_weight, bin_weight, net_weight, weighing_time, image_url
       FROM weight_records
       ORDER BY weighing_time DESC
-    `).all();
+      LIMIT ? OFFSET ?
+    `).all(limit, offset);
     
-    res.json(weightRecords);
+    res.json({
+      records: weightRecords,
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages: Math.ceil(totalCount / limit),
+        hasNext: page < Math.ceil(totalCount / limit),
+        hasPrev: page > 1
+      }
+    });
   } catch (error) {
     console.error('Error fetching weight records:', error);
     res.status(500).json({ message: 'Server error' });
