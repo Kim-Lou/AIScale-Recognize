@@ -12,12 +12,39 @@ const getEnvVar = (key, defaultValue) => {
 
 // 从环境变量或默认值中获取API基础URL
 const getApiBaseUrl = () => {
-  return getEnvVar('REACT_APP_API_BASE_URL', 'http://localhost:5001/api');
+  // 首先检查是否有明确设置的环境变量
+  const envUrl = getEnvVar('REACT_APP_API_BASE_URL');
+  if (envUrl) {
+    return envUrl;
+  }
+  
+  // 检测当前环境，自动适配
+  // 如果不是localhost或127.0.0.1，使用相对路径或当前域名
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    // 在生产环境中使用相对路径或当前域名
+    return '/api'; // 或者使用 `window.location.origin + '/api'`
+  }
+  
+  // 开发环境默认使用localhost
+  return 'http://localhost:5001/api';
 };
 
 // 获取后端服务的基础URL（用于图片等资源访问）
 const getBackendBaseUrl = () => {
-  return getEnvVar('REACT_APP_BACKEND_BASE_URL', 'http://localhost:5001');
+  // 首先检查是否有明确设置的环境变量
+  const envUrl = getEnvVar('REACT_APP_BACKEND_BASE_URL');
+  if (envUrl) {
+    return envUrl;
+  }
+  
+  // 检测当前环境，自动适配
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    // 在生产环境中使用相对路径或当前域名
+    return ''; // 或者使用 `window.location.origin`
+  }
+  
+  // 开发环境默认使用localhost
+  return 'http://localhost:5001';
 };
 
 // API端点配置

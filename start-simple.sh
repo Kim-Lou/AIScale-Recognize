@@ -68,9 +68,9 @@ echo ""
 read -p "请选择启动方式 [1-3]: " choice
 
 case $choice in
-    1)
+    1) 
         echo "🚀 启动前后端..."
-        npm run start
+        npm run dev:full
         ;;
     2)
         echo "🌐 启动前端..."
@@ -82,6 +82,6 @@ case $choice in
         ;;
     *)
         echo "❌ 无效选择，默认启动前后端"
-        npm run start
+        npm run dev:full
         ;;
 esac
