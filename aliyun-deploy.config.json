@@ -1,0 +1,179 @@
+{
+  "deployment": {
+    "server": {
+      "type": "aliyun_ecs",
+      "recommended_instance": "ecs.t6-c2m2.large",
+      "os": "Ubuntu 22.04 LTS",
+      "required_ports": [
+        22, 80, 443, 5001
+      ],
+      "system_requirements": {
+        "cpu": "2核",
+        "memory": "2GB",
+        "storage": "40GB"
+      }
+    },
+    "database": {
+      "type": "sqlite",
+      "path": "/var/www/scalesense/server/data/scalesense.db",
+      "backup": {
+        "enabled": true,
+        "schedule": "0 2 * * *",
+        "retention_days": 7
+      }
+    },
+    "services": {
+      "frontend": {
+        "build_command": "npm run build",
+        "dist_dir": "dist",
+        "static_files": true
+      },
+      "backend": {
+        "start_command": "node server/index.js",
+        "process_manager": "pm2",
+        "name": "scalesense-server"
+      }
+    },
+    "environment": {
+      "NODE_ENV": "production",
+      "PORT": 5001,
+      "DB_PATH": "/var/www/scalesense/server/data/scalesense.db",
+      "CORS_ORIGIN": "http://DOMAIN,https://DOMAIN",
+      "EXTERNAL_API_KEY": "YOUR_API_KEY_HERE",
+      "USE_MOCK_DATA": "false",
+      "ENABLE_SAMPLE_DATA": "false",
+      "REACT_APP_API_BASE_URL": "http://SERVER_IP:5001/api",
+      "REACT_APP_BACKEND_BASE_URL": "http://SERVER_IP:5001"
+    },
+    "nginx": {
+      "config_path": "/etc/nginx/sites-available/scalesense",
+      "listen_port": 80,
+      "root_dir": "/var/www/scalesense/dist",
+      "proxy": {
+        "/api": {
+          "target": "http://localhost:5001/api"
+        },
+        "/uploads": {
+          "alias": "/var/www/scalesense/server/uploads"
+        }
+      }
+    },
+    "ssl": {
+      "enabled": false,
+      "provider": "letsencrypt",
+      "certbot_command": "certbot --nginx -d DOMAIN"
+    },
+    "backup": {
+      "paths": [
+        "/var/www/scalesense/.env",
+        "/var/www/scalesense/server/data",
+        "/var/www/scalesense/server/uploads"
+      ],
+      "destination": "/var/backups/scalesense",
+      "schedule": "daily"
+    },
+    "monitoring": {
+      "pm2": {
+        "logs": true,
+        "monitor": true
+      },
+      "health_check": {
+        "url": "http://SERVER_IP:5001/api/health",
+        "interval": "5m"
+      }
+    },
+    "security": {
+      "ufw": {
+        "enabled": true,
+        "allowed_ports": [
+          "22/tcp",
+          "80/tcp",
+          "443/tcp",
+          "5001/tcp"
+        ]
+      },
+      "files_permissions": {
+        "/var/www/scalesense": "www-data:www-data",
+        "/var/www/scalesense/server/uploads": "775"
+      }
+    },
+    "maintenance": {
+      "update_frequency": "monthly",
+      "steps": [
+        "git pull origin main",
+        "npm install",
+        "npm run build",
+        "pm2 restart scalesense-server"
+      ]
+    },
+    "external_integration": {
+      "api_key": "YOUR_API_KEY_HERE",
+      "allowed_ips": [],
+      "endpoints": [
+        "/api/external/weights",
+        "/api/external/customers"
+      ]
+    }
+  },
+  "deployment_steps": [
+    "系统更新和依赖安装",
+    "Node.js 环境配置",
+    "项目代码获取",
+    "环境变量配置",
+    "依赖安装和前端构建",
+    "Nginx 服务器配置",
+    "后端服务启动",
+    "安全配置和优化"
+  ],
+  "troubleshooting": {
+    "common_issues": [
+      {
+        "issue": "Nginx 无法启动",
+        "solution": "检查配置文件语法：nginx -t，查看错误日志：cat /var/log/nginx/error.log"
+      },
+      {
+        "issue": "后端服务无法访问",
+        "solution": "查看PM2日志：pm2 logs scalesense-server，检查端口占用：lsof -i :5001"
+      },
+      {
+        "issue": "数据库连接错误",
+        "solution": "检查数据库文件权限和路径是否正确"
+      },
+      {
+        "issue": "图片上传失败",
+        "solution": "检查uploads目录权限：ls -la server/uploads"
+      }
+    ],
+    "log_locations": {
+      "application": "~/.pm2/logs/scalesense-server-*.log",
+      "nginx_access": "/var/log/nginx/access.log",
+      "nginx_error": "/var/log/nginx/error.log"
+    }
+  },
+  "customization": {
+    "frontend_config": {
+      "title": "ScaleSense AI",
+      "logo": "src/assets/logo.png",
+      "theme": "light"
+    },
+    "api_endpoints": {
+      "prefix": "/api",
+      "version": "v1"
+    }
+  },
+  "post_deployment": {
+    "tasks": [
+      "修改管理员密码",
+      "配置SSL证书启用HTTPS",
+      "设置定期备份",
+      "添加系统用户",
+      "配置监控告警"
+    ],
+    "verification": [
+      "访问系统首页确认正常加载",
+      "登录系统验证认证功能",
+      "测试数据上传和查询功能",
+      "验证外部API集成功能"
+    ]
+  }
+}
