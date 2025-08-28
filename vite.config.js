@@ -13,6 +13,8 @@ export default defineConfig({
     // 开发服务器配置
     port: 5173,
     strictPort: true,
+    // 允许的主机名配置 - 只允许ai.wkuai.xyz和localhost访问
+    allowedHosts: ['ai.wkuai.xyz', 'localhost'],
     // 代理配置，将/api请求代理到后端服务器
     proxy: {
       '/api': {
