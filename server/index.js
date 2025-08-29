@@ -57,6 +57,8 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// 新增：提供前端静态文件服务
+app.use(express.static(path.join(__dirname, '../dist')));
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -75,6 +77,11 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
   // Return the file path
   const filePath = `/uploads/${req.file.filename}`;
   res.json({ filePath });
+});
+
+// 新增：SPA回退路由
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
 // Initialize database
