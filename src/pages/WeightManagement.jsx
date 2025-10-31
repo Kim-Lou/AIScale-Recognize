@@ -1,8 +1,49 @@
 import React, { useState, useEffect } from 'react';
 import { PlusCircle, Search, Filter, Trash2, Edit, Image, AlertCircle, Copy } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, isValid } from 'date-fns';
 import * as api from '../services/api';
-import { API_CONFIG } from '../config';
+import { API_CONFIG, BIN_WEIGHT_CONFIG, APP_CONSTANTS } from '../config';
+
+// 安全的日期显示辅助函数
+const safeDateDisplay = (timeValue) => {
+  try {
+    // 多层防御性检查
+    if (!timeValue || 
+        (typeof timeValue !== 'string' && typeof timeValue !== 'number') ||
+        (typeof timeValue === 'string' && timeValue.trim() === '')) {
+      return '-';
+    }
+    
+    // 创建日期对象并验证
+    const date = new Date(timeValue);
+    
+    // 使用date-fns的isValid函数验证日期
+    if (isValid(date)) {
+      try {
+        return format(date, 'MMM dd, yyyy HH:mm');
+      } catch (formatError) {
+        return '-';
+      }
+    }
+    
+    // 如果验证失败，返回安全的后备值
+    return typeof timeValue === 'string' ? timeValue.substring(0, 16) : String(timeValue);
+  } catch (error) {
+    return '-';
+  }
+};
+
+// 安全处理数值格式化
+const safeNumberDisplay = (num) => {
+  try {
+    if (num === null || num === undefined || num === '') return '-';
+    const parsedNum = parseFloat(num);
+    return isNaN(parsedNum) ? '-' : parsedNum.toFixed(2);
+  } catch (error) {
+    // 静默处理数字显示错误
+    return '-';
+  }
+};
 
 function WeightRecordModal({ isOpen, onClose, record, onSave, customers }) {
   const [formData, setFormData] = useState({
@@ -35,13 +76,17 @@ function WeightRecordModal({ isOpen, onClose, record, onSave, customers }) {
       });
       setFilePreview(record.image_url || null);
     } else {
+      // 设置默认值，包括默认垃圾桶类型和对应的重量
+      const defaultBinType = APP_CONSTANTS.DEFAULT_BIN_CAPACITY;
+      const defaultBinWeight = BIN_WEIGHT_CONFIG.getBinWeight(defaultBinType) || 0;
+      
       setFormData({
         customer_id: '',
         customer_name: '',
         waste_type: '',
-        bin_type: '',
+        bin_type: defaultBinType,
         total_weight: 0,
-        bin_weight: 0,
+        bin_weight: defaultBinWeight,
         net_weight: 0,
         image_url: ''
       });
@@ -64,11 +109,23 @@ function WeightRecordModal({ isOpen, onClose, record, onSave, customers }) {
           customer_name: selectedCustomer.name
         });
       }
+    } else if (name === 'bin_type') {
+      // 当垃圾桶类型改变时，自动设置对应的默认重量
+      const binWeight = BIN_WEIGHT_CONFIG.getBinWeight(value) || 0;
+      // 重新计算净重
+      const net = Math.max(0, formData.total_weight - binWeight).toFixed(2);
+      
+      setFormData({
+        ...formData,
+        bin_type: value,
+        bin_weight: binWeight,
+        net_weight: parseFloat(net)
+      });
     } else if (name === 'total_weight' || name === 'bin_weight') {
       // Calculate net weight automatically
       const total = name === 'total_weight' ? parseFloat(value) : formData.total_weight;
       const bin = name === 'bin_weight' ? parseFloat(value) : formData.bin_weight;
-      const net = Math.max(0, total - bin).toFixed(1);
+      const net = Math.max(0, total - bin).toFixed(2);
       
       setFormData({
         ...formData,
@@ -208,7 +265,7 @@ function WeightRecordModal({ isOpen, onClose, record, onSave, customers }) {
               <label className="block text-sm font-medium text-gray-700">Total Weight (kg)</label>
               <input
                 type="number"
-                step="0.1"
+                step="0.01"
                 name="total_weight"
                 value={formData.total_weight}
                 onChange={handleChange}
@@ -221,7 +278,7 @@ function WeightRecordModal({ isOpen, onClose, record, onSave, customers }) {
               <label className="block text-sm font-medium text-gray-700">Bin Weight (kg)</label>
               <input
                 type="number"
-                step="0.1"
+                step="0.01"
                 name="bin_weight"
                 value={formData.bin_weight}
                 onChange={handleChange}
@@ -234,7 +291,7 @@ function WeightRecordModal({ isOpen, onClose, record, onSave, customers }) {
               <label className="block text-sm font-medium text-gray-700">Net Weight (kg)</label>
               <input
                 type="number"
-                step="0.1"
+                step="0.01"
                 name="net_weight"
                 value={formData.net_weight}
                 readOnly
@@ -356,7 +413,9 @@ function WeightManagement() {
     page: 1,
     limit: 50,
     totalCount: 0,
-    totalPages: 1
+    totalPages: 1,
+    hasPrev: false,
+    hasNext: false
   });
   
   // Fetch weight records and customers
@@ -371,7 +430,9 @@ function WeightManagement() {
         setPagination(prev => ({
           ...prev,
           totalCount: recordsResponse.data.pagination.totalCount,
-          totalPages: recordsResponse.data.pagination.totalPages
+          totalPages: recordsResponse.data.pagination.totalPages,
+          hasPrev: prev.page > 1,
+          hasNext: prev.page < recordsResponse.data.pagination.totalPages
         }));
         
         // Fetch customers for the dropdown in the form
@@ -381,7 +442,6 @@ function WeightManagement() {
         setError('');
       } catch (err) {
         setError('Failed to load data. Please try again.');
-        console.error('Error fetching data:', err);
       } finally {
         setLoading(false);
       }
@@ -408,18 +468,19 @@ function WeightManagement() {
         // Refresh current page data
         const recordsResponse = await api.getWeightRecords(pagination.page, pagination.limit);
         setRecords(recordsResponse.data.records);
+        const newPage = recordsResponse.data.records.length === 0 && pagination.page > 1 
+          ? pagination.page - 1 
+          : pagination.page;
         setPagination(prev => ({
           ...prev,
           totalCount: recordsResponse.data.pagination.totalCount,
           totalPages: recordsResponse.data.pagination.totalPages,
-          // If current page is now empty and not the first page, go to previous page
-          page: recordsResponse.data.records.length === 0 && pagination.page > 1 
-            ? pagination.page - 1 
-            : pagination.page
+          page: newPage,
+          hasPrev: newPage > 1,
+          hasNext: newPage < recordsResponse.data.pagination.totalPages
         }));
       } catch (err) {
         setError('Failed to delete record. Please try again.');
-        console.error('Error deleting record:', err);
       }
     }
   };
@@ -435,17 +496,18 @@ function WeightManagement() {
       }
       
       // Refresh current page data
-      const recordsResponse = await api.getWeightRecords(pagination.page, pagination.limit);
-      setRecords(recordsResponse.data.records);
-      setPagination(prev => ({
-        ...prev,
-        totalCount: recordsResponse.data.pagination.totalCount,
-        totalPages: recordsResponse.data.pagination.totalPages
-      }));
+        const recordsResponse = await api.getWeightRecords(pagination.page, pagination.limit);
+        setRecords(recordsResponse.data.records);
+        setPagination(prev => ({
+          ...prev,
+          totalCount: recordsResponse.data.pagination.totalCount,
+          totalPages: recordsResponse.data.pagination.totalPages,
+          hasPrev: prev.page > 1,
+          hasNext: prev.page < recordsResponse.data.pagination.totalPages
+        }));
       
       setIsModalOpen(false);
     } catch (err) {
-      console.error('Error saving record:', err);
       throw new Error(err.response?.data?.message || 'Failed to save record');
     }
   };
@@ -459,29 +521,114 @@ function WeightManagement() {
   };
 
   const handlePageChange = (newPage) => {
-    setPagination(prev => ({ ...prev, page: newPage }));
+    setPagination(prev => ({ 
+      ...prev, 
+      page: newPage,
+      hasPrev: newPage > 1,
+      hasNext: newPage < prev.totalPages
+    }));
   };
 
   const handleLimitChange = (newLimit) => {
     setPagination(prev => ({ 
       ...prev, 
       limit: parseInt(newLimit), 
-      page: 1 // Reset to first page when changing limit
+      page: 1, // Reset to first page when changing limit
+      hasPrev: false,
+      hasNext: false // Will be updated when new data loads
     }));
   };
   
-  // Apply filters and search (now applied to current page records)
-  const filteredRecords = records.filter(record => {
-    const matchesSearch = 
-      (record.customer_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      record.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      record.waste_type?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (record.weighRecordId && record.weighRecordId.toLowerCase().includes(searchTerm.toLowerCase())));
+  // 排序和筛选记录
+  const filteredRecords = React.useMemo(() => {
+    // 优化的日期处理逻辑
+    const safeRecords = records.map((r, index) => {
+      try {
+        // 第一层防御：确保记录是有效对象
+        if (!r || typeof r !== 'object') {
+          return {
+            id: `invalid-record-${index}`,
+            displayDate: '--'
+          };
+        }
+        
+        // 使用可选链和默认值处理可能的空值
+        const weighingTime = r?.weighing_time;
+        
+        // 过滤常见的无效日期格式
+        if (!weighingTime || 
+            weighingTime === '0000-00-00 00:00:00' || 
+            weighingTime === '0000-00-00' ||
+            weighingTime === 'null' ||
+            weighingTime === 'undefined' ||
+            (typeof weighingTime === 'string' && weighingTime.trim() === '')) {
+          // 无效日期时返回默认值
+          return {
+            ...r,
+            displayDate: '--'
+          };
+        }
+        
+        // 创建日期对象并验证有效性
+        const date = new Date(weighingTime);
+        const isValidDate = isValid(date) && !isNaN(date.getTime());
+        
+        if (isValidDate) {
+          try {
+            // 格式化日期，增加时分显示
+            return {
+              ...r,
+              displayDate: format(date, 'yyyy-MM-dd HH:mm')
+            };
+          } catch (formatError) {
+            return {
+              ...r,
+              displayDate: '--'
+            };
+          }
+        } else {
+          return {
+            ...r,
+            displayDate: '--'
+          };
+        }
+      } catch (error) {
+        return {
+          ...r,
+          displayDate: '--'
+        };
+      }
+    });
     
-    const matchesFilter = filterWasteType ? record.waste_type === filterWasteType : true;
+    let filtered = [...safeRecords];
     
-    return matchesSearch && matchesFilter;
-  });
+    // Apply search
+    if (searchTerm) {
+      const lowerSearchTerm = searchTerm.toLowerCase();
+      filtered = filtered.filter(record => 
+        (record.customer_id?.toLowerCase().includes(lowerSearchTerm) ||
+        record.customer_name?.toLowerCase().includes(lowerSearchTerm) ||
+        record.waste_type?.toLowerCase().includes(lowerSearchTerm) ||
+        record.device_id?.toLowerCase().includes(lowerSearchTerm) ||
+        (record.weighRecordId && record.weighRecordId.toLowerCase().includes(lowerSearchTerm)) ||
+        record.displayDate?.includes(searchTerm))
+      );
+    }
+    
+    // Apply filter
+    if (filterWasteType) {
+      filtered = filtered.filter(record => record.waste_type === filterWasteType);
+    }
+    
+    // 按时间降序排序，最新的排在前面
+    filtered.sort((a, b) => {
+      const dateA = a.weighing_time ? new Date(a.weighing_time).getTime() : 0;
+      const dateB = b.weighing_time ? new Date(b.weighing_time).getTime() : 0;
+      return dateB - dateA; // 降序排序
+    });
+    
+    return filtered;
+  }, [records, searchTerm, filterWasteType]);
   
   return (
     <div>
@@ -506,13 +653,13 @@ function WeightManagement() {
       <div className="card">
         <div className="flex flex-col sm:flex-row justify-between items-center mb-4">
           <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto mb-4 sm:mb-0">
-            <div className="relative w-full sm:w-64">
+            <div className="relative w-full sm:w-96">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Search className="h-5 w-5 text-gray-400" />
               </div>
               <input
                 type="text"
-                placeholder="Search records..."
+                placeholder="Search records (ID, Name, Type or Date 2025-10-23 14:30)..."
                 className="input pl-10"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -549,14 +696,15 @@ function WeightManagement() {
             <p className="mt-2 text-gray-600">Loading records...</p>
           </div>
         ) : (
-          <div>
-            <div className="table-container">
+          <div className="flex flex-col min-h-[400px]">
+            <div className="table-container flex-1">
               <table className="table">
                 <thead>
                   <tr>
                     <th>WeighRecordId</th>
                     <th>Customer ID</th>
                     <th>Customer Name</th>
+                    <th>Device ID</th>
                     <th>Waste Type</th>
                     <th>Bin Type</th>
                     <th>Total Weight (kg)</th>
@@ -568,52 +716,70 @@ function WeightManagement() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredRecords.length > 0 ? (
-                    filteredRecords.map((record) => (
-                      <tr key={record.id}>
-                        <td className="flex items-center">
-                          <span className="truncate max-w-[100px] mr-1" title={record.weighRecordId}>
-                            {record.weighRecordId?.substring(0, 8)}...
-                          </span>
-                          <WeighRecordIdCopyButton weighRecordId={record.weighRecordId} />
-                        </td>
-                        <td>{record.customer_id}</td>
-                        <td>{record.customer_name}</td>
-                        <td>{record.waste_type}</td>
-                        <td>{record.bin_type}</td>
-                        <td>{parseFloat(record.total_weight).toFixed(1)}</td>
-                        <td>{parseFloat(record.bin_weight).toFixed(1)}</td>
-                        <td>{parseFloat(record.net_weight).toFixed(1)}</td>
-                        <td>{format(new Date(record.weighing_time), 'MMM dd, yyyy HH:mm')}</td>
-                        <td>
-                          {record.image_url && (
+                  {filteredRecords && Array.isArray(filteredRecords) && filteredRecords.length > 0 ? (
+                    filteredRecords.map((record, index) => {
+                      // 全面防御性检查，确保record是有效对象
+                      if (!record || typeof record !== 'object') {
+                        // 静默处理无效记录
+                        return null;
+                      }
+                        
+                      // 安全地获取记录ID，使用索引作为后备
+                      const recordId = record.id || `record-${index}`;
+                       
+                      return (
+                        <tr key={recordId}>
+                          <td className="flex items-center">
+                            {record.weighRecordId ? (
+                              <>
+                                <span className="truncate max-w-[100px] mr-1" title={record.weighRecordId}>
+                                  {record.weighRecordId.substring(0, 8)}...
+                                </span>
+                                <WeighRecordIdCopyButton weighRecordId={record.weighRecordId} />
+                              </>
+                            ) : '-'}
+                          </td>
+                          <td>{record.customer_id || '-'}</td>
+                          <td>{record.customer_name || '-'}</td>
+                          <td>{record.device_id || '-'}</td>
+                          <td>{record.waste_type || '-'}</td>
+                          <td>{record.bin_type || '-'}</td>
+                          <td>{safeNumberDisplay(record.total_weight)}</td>
+                          <td>{safeNumberDisplay(record.bin_weight)}</td>
+                          <td>{safeNumberDisplay(record.net_weight)}</td>
+                          <td>{record.displayDate || '--'}</td>
+                          <td>
+                            {record.image_url && (
+                              <button 
+                                onClick={() => handleImageClick(record.image_url)}
+                                className="text-primary hover:text-primary-dark"
+                              >
+                                <Image className="h-5 w-5" />
+                              </button>
+                            )}
+                          </td>
+                          <td className="flex space-x-2">
                             <button 
-                              onClick={() => handleImageClick(record.image_url)}
-                              className="text-primary hover:text-primary-dark"
+                              onClick={() => handleEdit(record)}
+                              className="text-blue-600 hover:text-blue-800"
+                              disabled={!record.id}
                             >
-                              <Image className="h-5 w-5" />
+                              <Edit className="h-5 w-5" />
                             </button>
-                          )}
-                        </td>
-                        <td className="flex space-x-2">
-                          <button 
-                            onClick={() => handleEdit(record)}
-                            className="text-blue-600 hover:text-blue-800"
-                          >
-                            <Edit className="h-5 w-5" />
-                          </button>
-                          <button 
-                            onClick={() => handleDelete(record.id)}
-                            className="text-red-600 hover:text-red-800"
-                          >
-                            <Trash2 className="h-5 w-5" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                            <button 
+                              onClick={() => record.id && handleDelete(record.id)}
+                              className="text-red-600 hover:text-red-800"
+                              disabled={!record.id}
+                            >
+                              <Trash2 className="h-5 w-5" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
                   ) : (
                     <tr>
-                      <td colSpan="11" className="text-center py-4">
+                      <td colSpan="12" className="text-center py-4">
                         No records found
                       </td>
                     </tr>
@@ -623,23 +789,23 @@ function WeightManagement() {
             </div>
             
             {/* Pagination Controls */}
-            {pagination.totalPages > 1 && (
-              <div className="mt-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <label className="text-sm text-gray-700">Show:</label>
-                  <select
-                    value={pagination.limit}
-                    onChange={(e) => handleLimitChange(e.target.value)}
-                    className="input text-sm py-1 px-2 h-8"
-                  >
-                    <option value={10}>10</option>
-                    <option value={25}>25</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                  </select>
-                  <span className="text-sm text-gray-700">per page</span>
-                </div>
-                
+            <div className="mt-auto pt-4 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200">
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-gray-700">Show:</label>
+                <select
+                  value={pagination.limit}
+                  onChange={(e) => handleLimitChange(e.target.value)}
+                  className="input text-sm py-1 px-2 h-8"
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+                <span className="text-sm text-gray-700">per page</span>
+              </div>
+              
+              {pagination.totalPages > 1 && (
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => handlePageChange(pagination.page - 1)}
@@ -661,12 +827,12 @@ function WeightManagement() {
                     Next
                   </button>
                 </div>
-                
-                <div className="text-sm text-gray-700">
-                  Total: {pagination.totalCount} records
-                </div>
+              )}
+              
+              <div className="text-sm text-gray-700">
+                Total: {pagination.totalCount} records
               </div>
-            )}
+            </div>
           </div>
         )}
       </div>

@@ -134,4 +134,33 @@ export const uploadImage = (file) => {
   });
 };
 
+// Device endpoints
+export const getDevices = (filters = {}) => {
+  const queryParams = new URLSearchParams();
+  if (filters.device_id) queryParams.append('device_id', filters.device_id);
+  if (filters.registered_from) queryParams.append('registered_from', filters.registered_from);
+  if (filters.registered_to) queryParams.append('registered_to', filters.registered_to);
+  
+  const queryString = queryParams.toString();
+  const url = queryString ? `${API_CONFIG.endpoints.devices}?${queryString}` : API_CONFIG.endpoints.devices;
+  
+  return api.get(url);
+};
+
+export const getDevice = (id) => {
+  return api.get(API_CONFIG.endpoints.device(id));
+};
+
+export const createDevice = (deviceData) => {
+  return api.post(API_CONFIG.endpoints.devices, deviceData);
+};
+
+export const updateDeviceUploadTime = (id) => {
+  return api.put(API_CONFIG.endpoints.deviceUpload(id));
+};
+
+export const deleteDevice = (id) => {
+  return api.delete(API_CONFIG.endpoints.device(id));
+};
+
 export default api;

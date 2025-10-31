@@ -19,13 +19,14 @@ const getApiBaseUrl = () => {
   }
   
   // 检测当前环境，自动适配
-  // 如果不是localhost或127.0.0.1，使用相对路径或当前域名
-  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-    // 在生产环境中使用相对路径或当前域名
-    return '/api'; // 或者使用 `window.location.origin + '/api'`
+  // 对于生产环境，使用相对路径，确保请求不会跨域
+  // 这样可以确保在不同环境中都能正确工作
+  if (typeof window !== 'undefined') {
+    // 使用相对路径，这样可以确保API请求与前端页面使用相同的主机和端口
+    return '/api';
   }
   
-  // 开发环境默认使用localhost
+  // 服务器端渲染或测试环境的默认值
   return 'http://localhost:5001/api';
 };
 
@@ -38,12 +39,12 @@ const getBackendBaseUrl = () => {
   }
   
   // 检测当前环境，自动适配
-  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-    // 在生产环境中使用相对路径或当前域名
-    return ''; // 或者使用 `window.location.origin`
+  if (typeof window !== 'undefined') {
+    // 使用空字符串（相对路径），这样资源URL会相对于当前页面的URL构建
+    return '';
   }
   
-  // 开发环境默认使用localhost
+  // 服务器端渲染或测试环境的默认值
   return 'http://localhost:5001';
 };
 
@@ -73,7 +74,12 @@ export const API_CONFIG = {
     weeklyCustomers: '/dashboard/weekly-customers',
     
     // File upload
-    upload: '/upload'
+    upload: '/upload',
+    
+    // Device endpoints
+    devices: '/devices',
+    device: (id) => `/devices/${id}`,
+    deviceUpload: (id) => `/devices/${id}/upload`
   }
 };
 
@@ -83,9 +89,42 @@ export const PAGINATION_CONFIG = {
   pageSizes: [10, 25, 50, 100]
 };
 
+// 垃圾桶默认重量配置
+export const BIN_WEIGHT_CONFIG = {
+  // 垃圾桶类型配置，包含不同容量的垃圾桶默认重量和尺寸信息
+  bins: {
+    '120L': {
+      capacity: '120L',
+      dimensions: '470mm*550mm',
+      weight: 7.3 // 默认重量（kg）
+    },
+    '240L': {
+      capacity: '240L',
+      dimensions: '720mm*580mm',
+      weight: 12.1 // 默认重量（kg）
+    },
+    '660L': {
+      capacity: '660L',
+      dimensions: '1320mm*850mm',
+      weight: 40.7 // 默认重量（kg）
+    }
+  },
+  // 获取垃圾桶默认重量的辅助函数
+  getBinWeight: (capacity) => {
+    const binType = BIN_WEIGHT_CONFIG.bins[capacity];
+    return binType ? binType.weight : null;
+  },
+  // 获取所有垃圾桶类型的辅助函数
+  getBinTypes: () => {
+    return Object.keys(BIN_WEIGHT_CONFIG.bins);
+  }
+};
+
 // 应用常量
 export const APP_CONSTANTS = {
   APP_NAME: 'ScaleSense AI',
   APP_VERSION: '1.0.0',
-  DEFAULT_DATE_FORMAT: 'yyyy-MM-dd'
+  DEFAULT_DATE_FORMAT: 'yyyy-MM-dd',
+  // 默认垃圾桶类型
+  DEFAULT_BIN_CAPACITY: '240L'
 };

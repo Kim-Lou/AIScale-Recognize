@@ -2,12 +2,13 @@
 # 测试外部系统集成API - 称重记录创建接口（带图片）
 
 # 配置
-API_KEY="ss-api-2023-external-system-key"
+API_KEY="ss-api-1761882609945-q0VybCJjYiYMd3DwA1oqaLbQt9gK41uQkopCS_Hyy1c"
+DEVICE_ID="test-success-en-123"
 API_URL="http://localhost:5001/api/external/weight-records"
 IMAGE_PATH="server/uploads/test-image.png"
 
-# 生成唯一的RFID用于测试
-TEST_RFID="TEST-RFID-$(date +%s)"
+# 使用系统中已知存在的RFID进行测试
+TEST_RFID="RF1234"
 TOTAL_WEIGHT="65.75"
 WEIGHING_TIME="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
@@ -20,6 +21,7 @@ fi
 
 echo "🚀 开始测试外部系统集成API - 称重记录创建接口（带图片）..."
 echo "📋 测试参数："
+echo "  - 设备ID：$DEVICE_ID"
 echo "  - API密钥：$API_KEY"
 echo "  - API端点：$API_URL"
 echo "  - 图片路径：$IMAGE_PATH"
@@ -32,6 +34,7 @@ echo "\n📤 发送请求创建称重记录..."
 # 发送带图片的POST请求
 RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$API_URL" \
   -H "X-API-KEY: $API_KEY" \
+  -H "X-DEVICE-ID: $DEVICE_ID" \
   -F "rfid=$TEST_RFID" \
   -F "total_weight=$TOTAL_WEIGHT" \
   -F "weighing_time=$WEIGHING_TIME" \
@@ -82,10 +85,11 @@ if [ "$STATUS_CODE" -eq 201 ]; then
   fi
   
   # 可选：使用GET接口验证创建的记录
-  if [ ! -z "$WEIGH_RECORD_ID" ]; then
-    echo "\n🔄 使用GET接口验证记录详情..."
-    GET_RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "$API_URL/$WEIGH_RECORD_ID" \
-      -H "X-API-KEY: $API_KEY")
+    if [ ! -z "$WEIGH_RECORD_ID" ]; then
+      echo "\n🔄 使用GET接口验证记录详情..."
+      GET_RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "$API_URL/$WEIGH_RECORD_ID" \
+        -H "X-API-KEY: $API_KEY" \
+        -H "X-DEVICE-ID: $DEVICE_ID")
     
     # 提取GET响应体和状态码 - 兼容macOS
     GET_RESPONSE_LINES=$(echo "$GET_RESPONSE" | wc -l | tr -d ' ')

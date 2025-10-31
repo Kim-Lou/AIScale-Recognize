@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart3, TrendingUp, ArrowUp, ArrowDown, Scale, AlertCircle } from 'lucide-react';
+import { BarChart3, TrendingUp, ArrowUp, ArrowDown, ArrowRight, Scale, AlertCircle } from 'lucide-react';
 import { format, startOfWeek, endOfWeek } from 'date-fns';
 import * as api from '../services/api';
 
@@ -17,12 +17,14 @@ function WasteTypeCard({ title, value, icon, color, change }) {
         </div>
       </div>
       <div className="mt-3 flex items-center">
-        {change >= 0 ? (
+        {change > 0 ? (
           <ArrowUp className="h-4 w-4 text-green-500 mr-1" />
-        ) : (
+        ) : change < 0 ? (
           <ArrowDown className="h-4 w-4 text-red-500 mr-1" />
+        ) : (
+          <ArrowRight className="h-4 w-4 text-gray-500 mr-1" />
         )}
-        <span className={change >= 0 ? "text-green-500" : "text-red-500"}>
+        <span className={change > 0 ? "text-green-500" : change < 0 ? "text-red-500" : "text-gray-500"}>
           {Math.abs(change)}% 
         </span>
         <span className="text-gray-500 text-sm ml-1">from yesterday</span>

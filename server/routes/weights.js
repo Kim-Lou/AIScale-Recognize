@@ -28,7 +28,7 @@ router.get('/', authenticateToken, (req, res) => {
     // Get paginated records
     const weightRecords = db.prepare(`
       SELECT id, weighRecordId, customer_id, customer_name, waste_type, bin_type, 
-             total_weight, bin_weight, net_weight, weighing_time, image_url
+             total_weight, bin_weight, net_weight, weighing_time, image_url, device_id
       FROM weight_records
       ORDER BY weighing_time DESC
       LIMIT ? OFFSET ?
@@ -59,7 +59,7 @@ router.get('/customer/:customerId', authenticateToken, (req, res) => {
     const db = getDb();
     const weightRecords = db.prepare(`
       SELECT id, weighRecordId, customer_id, customer_name, waste_type, bin_type, 
-             total_weight, bin_weight, net_weight, weighing_time, image_url
+             total_weight, bin_weight, net_weight, weighing_time, image_url, device_id
       FROM weight_records
       WHERE customer_id = ?
       ORDER BY weighing_time DESC
@@ -80,7 +80,7 @@ router.get('/:id', authenticateToken, (req, res) => {
     const db = getDb();
     const weightRecord = db.prepare(`
       SELECT id, weighRecordId, customer_id, customer_name, waste_type, bin_type, 
-             total_weight, bin_weight, net_weight, weighing_time, image_url
+             total_weight, bin_weight, net_weight, weighing_time, image_url, device_id
       FROM weight_records
       WHERE id = ?
     `).get(id);
@@ -106,7 +106,8 @@ router.post('/', authenticateToken, (req, res) => {
     total_weight, 
     bin_weight, 
     net_weight, 
-    image_url 
+    image_url,
+    weighing_time
   } = req.body;
   
   if (!customer_id || !customer_name || !waste_type || !bin_type || 
@@ -114,6 +115,11 @@ router.post('/', authenticateToken, (req, res) => {
     return res.status(400).json({ 
       message: 'Customer ID, customer name, waste type, bin type, total weight, bin weight, and net weight are required' 
     });
+  }
+  
+  // 验证时间格式
+  if (weighing_time && weighing_time === '0000-00-00 00:00:00') {
+    return res.status(400).json({ code: 1, msg: '无效时间' });
   }
   
   try {
@@ -172,7 +178,8 @@ router.put('/:id', authenticateToken, (req, res) => {
     total_weight, 
     bin_weight, 
     net_weight, 
-    image_url 
+    image_url,
+    weighing_time
   } = req.body;
   
   if (!customer_id || !customer_name || !waste_type || !bin_type || 
@@ -180,6 +187,11 @@ router.put('/:id', authenticateToken, (req, res) => {
     return res.status(400).json({ 
       message: 'Customer ID, customer name, waste type, bin type, total weight, bin weight, and net weight are required' 
     });
+  }
+  
+  // 验证时间格式
+  if (weighing_time && weighing_time === '0000-00-00 00:00:00') {
+    return res.status(400).json({ code: 1, msg: '无效时间' });
   }
   
   try {

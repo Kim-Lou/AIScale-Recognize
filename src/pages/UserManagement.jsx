@@ -1,7 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { PlusCircle, Search, Trash2, Edit, AlertCircle } from 'lucide-react';
-import { format } from 'date-fns';
+import { Search, Edit, Trash2, PlusCircle, AlertCircle } from 'lucide-react';
+import { format, isValid } from 'date-fns';
 import * as api from '../services/api';
+
+// 安全的日期显示辅助函数
+const safeDateDisplay = (timeValue, formatStr = 'MMM dd, yyyy') => {
+  try {
+    if (!timeValue || 
+        (typeof timeValue !== 'string' && typeof timeValue !== 'number')) {
+      return '-';
+    }
+    
+    const date = new Date(timeValue);
+    if (isValid(date) && !isNaN(date.getTime())) {
+      return format(date, formatStr);
+    }
+    
+    return '-';
+  } catch (error) {
+    console.error('Date display error:', error);
+    return '-';
+  }
+};
 
 function UserModal({ isOpen, onClose, user, onSave }) {
   const [formData, setFormData] = useState({
@@ -283,8 +303,8 @@ function UserManagement() {
                       <td>{user.id}</td>
                       <td>{user.name}</td>
                       <td>{user.username}</td>
-                      <td>{format(new Date(user.created_at), 'MMM dd, yyyy')}</td>
-                      <td>{format(new Date(user.updated_at), 'MMM dd, yyyy')}</td>
+                      <td>{safeDateDisplay(user.created_at)}</td>
+                      <td>{safeDateDisplay(user.updated_at)}</td>
                       <td className="flex space-x-2">
                         <button 
                           onClick={() => handleEdit(user)}

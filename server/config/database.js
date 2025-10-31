@@ -144,9 +144,72 @@ export const initializeDatabase = async () => {
             net_weight REAL NOT NULL,
             weighing_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             image_url TEXT,
+            device_id TEXT,
             FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
           )
         `);
+      }
+      
+      // Create devices table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS devices (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          device_id TEXT NOT NULL UNIQUE,
+          api_key TEXT NOT NULL UNIQUE,
+          registration_key TEXT NOT NULL,
+          last_uploaded_at TIMESTAMP,
+          registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          registration_status TEXT DEFAULT 'pending',
+          registration_info TEXT
+        )
+      `);
+      
+      // 添加新字段（如果表已存在）
+      try {
+        // 尝试添加registration_status字段
+        db.exec(`ALTER TABLE devices ADD COLUMN registration_status TEXT DEFAULT 'pending'`);
+      } catch (e) {
+        // 字段可能已存在，忽略错误
+      }
+      
+      try {
+        // 尝试添加registration_info字段
+        db.exec(`ALTER TABLE devices ADD COLUMN registration_info TEXT`);
+      } catch (e) {
+        // 字段可能已存在，忽略错误
+      }
+      
+      try {
+        // 尝试为weight_records表添加device_id字段
+        db.exec(`ALTER TABLE weight_records ADD COLUMN device_id TEXT`);
+      } catch (e) {
+        // 字段可能已存在，忽略错误
+      }
+      
+      // 移除registration_key的唯一约束（如果存在）
+      try {
+        // 使用临时表方式重建表以移除唯一约束
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS devices_temp (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            device_id TEXT NOT NULL UNIQUE,
+            api_key TEXT NOT NULL UNIQUE,
+            registration_key TEXT NOT NULL,
+            last_uploaded_at TIMESTAMP,
+            registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            registration_status TEXT DEFAULT 'pending',
+            registration_info TEXT
+          );
+          
+          INSERT INTO devices_temp SELECT id, device_id, api_key, registration_key, last_uploaded_at, registered_at, 
+            COALESCE(registration_status, 'pending'), registration_info FROM devices;
+          
+          DROP TABLE devices;
+          
+          ALTER TABLE devices_temp RENAME TO devices;
+        `);
+      } catch (e) {
+        // 可能已经是新结构，忽略错误
       }
       
       // Check if we need to seed the database with initial data

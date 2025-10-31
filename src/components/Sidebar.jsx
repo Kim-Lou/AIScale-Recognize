@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Scale, Users, Building, BarChart } from 'lucide-react';
+import { Scale, Users, Building, BarChart, Monitor } from 'lucide-react';
 
 function Sidebar() {
   const navItems = [
@@ -23,6 +23,11 @@ function Sidebar() {
       name: 'Customer Management',
       to: '/customer-management',
       icon: <Building className="h-5 w-5" />
+    },
+    {
+      name: 'Device Management',
+      to: '/device-management',
+      icon: <Monitor className="h-5 w-5" />
     }
   ];
 

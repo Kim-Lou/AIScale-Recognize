@@ -1,7 +1,7 @@
 import express from 'express';
 import { getDb } from '../config/database.js';
 import { authenticateToken } from '../middleware/auth.js';
-import { startOfDay, endOfDay, subDays, startOfWeek, endOfWeek } from 'date-fns';
+import { startOfDay, endOfDay, subDays, startOfWeek, endOfWeek, format } from 'date-fns';
 
 const router = express.Router();
 
@@ -29,15 +29,23 @@ router.get('/today-stats', authenticateToken, (req, res) => {
   try {
     const db = getDb();
     
-    // Get today's date range
+    // Get today and yesterday's date range
     const today = new Date();
-    const todayStart = startOfDay(today).toISOString();
-    const todayEnd = endOfDay(today).toISOString();
-    
-    // Get yesterday's date range
+    const todayStart = startOfDay(today);
+    const todayEnd = endOfDay(today);
     const yesterday = subDays(today, 1);
-    const yesterdayStart = startOfDay(yesterday).toISOString();
-    const yesterdayEnd = endOfDay(yesterday).toISOString();
+    const yesterdayStart = startOfDay(yesterday);
+    const yesterdayEnd = endOfDay(yesterday);
+    
+    // Log for debugging
+    console.log(`Date range for today: ${todayStart.toISOString()} to ${todayEnd.toISOString()}`);
+    console.log(`Date range for yesterday: ${yesterdayStart.toISOString()} to ${yesterdayEnd.toISOString()}`);
+    
+    // Convert to ISO strings for database queries
+    const todayStartStr = todayStart.toISOString();
+    const todayEndStr = todayEnd.toISOString();
+    const yesterdayStartStr = yesterdayStart.toISOString();
+    const yesterdayEndStr = yesterdayEnd.toISOString();
     
     // Query for today's statistics by waste type
     const todayStats = db.prepare(`
@@ -47,7 +55,7 @@ router.get('/today-stats', authenticateToken, (req, res) => {
       FROM weight_records
       WHERE weighing_time BETWEEN ? AND ?
       GROUP BY waste_type
-    `).all(todayStart, todayEnd);
+    `).all(todayStartStr, todayEndStr);
     
     // Query for yesterday's statistics by waste type
     const yesterdayStats = db.prepare(`
@@ -57,7 +65,7 @@ router.get('/today-stats', authenticateToken, (req, res) => {
       FROM weight_records
       WHERE weighing_time BETWEEN ? AND ?
       GROUP BY waste_type
-    `).all(yesterdayStart, yesterdayEnd);
+    `).all(yesterdayStartStr, yesterdayEndStr);
     
     // Process the results
     const wasteTypes = ['Paper', 'Plastic', 'Glass', 'Metal'];
@@ -76,18 +84,28 @@ router.get('/today-stats', authenticateToken, (req, res) => {
       }
     });
     
-    // Process yesterday's data and calculate change
+    // Create a map of yesterday's stats for easy lookup
+    const yesterdayStatsMap = {};
     yesterdayStats.forEach(stat => {
       const type = stat.waste_type.toLowerCase();
-      if (wasteTypes.some(w => w.toLowerCase() === type)) {
-        const yesterdayValue = parseFloat(stat.total_weight) || 0;
-        if (yesterdayValue > 0) {
-          const todayValue = result[type].value;
-          result[type].change = Math.round((todayValue - yesterdayValue) / yesterdayValue * 100);
-        } else if (result[type].value > 0) {
-          // If yesterday was 0 but today has value, set change to 100%
-          result[type].change = 100;
-        }
+      yesterdayStatsMap[type] = parseFloat(stat.total_weight) || 0;
+    });
+    
+    // Calculate change for each waste type
+    wasteTypes.forEach(type => {
+      const typeLower = type.toLowerCase();
+      const todayValue = result[typeLower].value;
+      const yesterdayValue = yesterdayStatsMap[typeLower] || 0;
+      
+      if (yesterdayValue > 0) {
+        // Normal case: yesterday has data
+        result[typeLower].change = Math.round((todayValue - yesterdayValue) / yesterdayValue * 100);
+      } else if (todayValue > 0) {
+        // Special case: yesterday has no data but today does
+        result[typeLower].change = 100;
+      } else {
+        // Both yesterday and today have no data
+        result[typeLower].change = 0;
       }
     });
     
@@ -117,10 +135,14 @@ router.get('/weekly-customers', authenticateToken, (req, res) => {
     const db = getDb();
     const limit = parseInt(req.query.limit) || 15;
     
-    // Get this week's date range
+    // Get this week's date range with locale consideration
     const today = new Date();
-    const weekStart = startOfWeek(today).toISOString();
-    const weekEnd = endOfWeek(today).toISOString();
+    // 手动设置周起始日为周一（1代表周一，0代表周日）
+    const weekStart = startOfWeek(today, { weekStartsOn: 1 });
+    const weekEnd = endOfWeek(today, { weekStartsOn: 1 });
+    
+    // Log for debugging
+    console.log(`Week date range: ${weekStart.toISOString()} to ${weekEnd.toISOString()}`);
     
     // Query for customer rankings
     const customerRankings = db.prepare(`
@@ -134,7 +156,7 @@ router.get('/weekly-customers', authenticateToken, (req, res) => {
       GROUP BY customer_id, customer_name
       ORDER BY total_net_weight DESC
       LIMIT ?
-    `).all(weekStart, weekEnd, limit);
+    `).all(weekStart.toISOString(), weekEnd.toISOString(), limit);
     
     // Format the results
     const formattedRankings = customerRankings.map(customer => ({

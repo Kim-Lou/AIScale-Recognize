@@ -13,6 +13,8 @@ import customerRoutes from './routes/customers.js';
 import weightRoutes from './routes/weights.js';
 import externalApiRoutes from './routes/externalApi.js';
 import dashboardRoutes from './routes/dashboard.js';
+import keyRoutes from './routes/keys.js';
+import deviceRoutes from './routes/devices.js';
 
 // Import database initialization
 import { initializeDatabase } from './config/database.js';
@@ -67,6 +69,8 @@ app.use('/api/customers', customerRoutes);
 app.use('/api/weights', weightRoutes);
 app.use('/api/external', externalApiRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/keys', keyRoutes);
+app.use('/api/devices', deviceRoutes);
 
 // File upload endpoint
 app.post('/api/upload', upload.single('image'), (req, res) => {

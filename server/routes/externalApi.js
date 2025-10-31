@@ -4,7 +4,6 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../config/database.js';
-import { authenticateApiKey } from '../middleware/auth.js';
 import { fileURLToPath } from 'url';
 
 const router = express.Router();
@@ -48,7 +47,8 @@ const upload = multer({
  * @apiGroup ExternalAPI
  * @apiDescription Creates a new weight record with data from external system
  * 
- * @apiHeader {String} X-API-KEY External system API key for authentication
+ * @apiHeader {String} X-DEVICE-ID Device ID for authentication
+ * @apiHeader {String} X-API-KEY Device API key for authentication
  * 
  * @apiBody {String} rfid The RFID number of the customer (required)
  * @apiBody {Number} total_weight The total weight in kg (required)
@@ -59,7 +59,50 @@ const upload = multer({
  * @apiSuccess {String} weighRecordId Globally unique record identifier
  * @apiSuccess {String} [image_url] URL to the weighing image
  */
-router.post('/weight-records', authenticateApiKey, upload.single('image'), async (req, res) => {
+// Middleware to authenticate device using device_id and api_key from database
+const authenticateDevice = (req, res, next) => {
+  try {
+    const deviceId = req.headers['x-device-id'];
+    const apiKey = req.headers['x-api-key'];
+    
+    // Check if headers are provided
+    if (!deviceId || !apiKey) {
+      return res.status(401).json({ error: 'Unauthorized', message: 'Missing required authentication headers: X-DEVICE-ID and X-API-KEY' });
+    }
+    
+    const db = getDb();
+    
+    // Step 1: Check if device_id exists in devices table
+    const deviceByDeviceId = db.prepare('SELECT id, device_id, api_key, registration_status FROM devices WHERE device_id = ?').get(deviceId);
+    
+    if (!deviceByDeviceId) {
+      return res.status(401).json({ error: 'Unauthorized', message: '设备未注册' });
+    }
+    
+    // Step 2: Check if api_key matches the device
+    if (deviceByDeviceId.api_key !== apiKey) {
+      return res.status(401).json({ error: 'Unauthorized', message: 'api_key错误' });
+    }
+    
+    // Step 3: Check if device is registered successfully
+    if (deviceByDeviceId.registration_status !== 'success') {
+      return res.status(403).json({ error: 'Forbidden', message: 'Device registration not completed successfully' });
+    }
+    
+    // Update last uploaded timestamp
+    db.prepare('UPDATE devices SET last_uploaded_at = CURRENT_TIMESTAMP WHERE id = ?').run(deviceByDeviceId.id);
+    
+    // Store device info in request for potential use
+    req.deviceInfo = deviceByDeviceId;
+    
+    next();
+  } catch (error) {
+    console.error('Authentication error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+router.post('/weight-records', authenticateDevice, upload.single('image'), async (req, res) => {
   try {
     const { rfid, total_weight, weighing_time } = req.body;
     
@@ -79,29 +122,11 @@ router.post('/weight-records', authenticateApiKey, upload.single('image'), async
     
     const db = getDb();
     
-    // Check if customer exists by RFID
-    let customer = db.prepare('SELECT id, name FROM customers WHERE rfid = ?').get(rfid);
+    // Step 3: Check if rfid exists in customers table
+    const customer = db.prepare('SELECT id, name FROM customers WHERE rfid = ?').get(rfid);
     
-    // If customer doesn't exist, create a new one with C-prefixed ID
     if (!customer) {
-      // Get the current count of customers to generate the next ID
-      const customerCount = db.prepare('SELECT COUNT(*) as count FROM customers').get().count;
-      
-      // Generate new customer ID with format C + 4-digit number
-      const newCustomerId = `C${String(customerCount + 1).padStart(4, '0')}`;
-      
-      // Create new customer with default name as 'New Customer'
-      db.prepare(`
-        INSERT INTO customers (id, rfid, name)
-        VALUES (?, ?, ?)
-      `).run(
-        newCustomerId,
-        rfid,
-        `Customer ${newCustomerId}`
-      );
-      
-      // Get the newly created customer
-      customer = db.prepare('SELECT id, name FROM customers WHERE id = ?').get(newCustomerId);
+      return res.status(400).json({ error: 'rfid不匹配' });
     }
     
     // Process image file if uploaded
@@ -117,12 +142,34 @@ router.post('/weight-records', authenticateApiKey, upload.single('image'), async
     const binWeight = 0;
     const netWeight = parsedTotalWeight; // If bin weight is unknown, net = total
     
+    // 验证weighing_time格式
+    let validWeighingTime = new Date().toISOString(); // 默认使用当前时间
+    if (weighing_time && weighing_time.trim()) {
+      // 检查是否为无效的时间格式
+      if (weighing_time === '0000-00-00 00:00:00' || weighing_time === '0000-00-00') {
+        // 使用当前时间替代无效时间
+        console.warn('Invalid weighing_time detected:', weighing_time, 'Using current time instead');
+      } else {
+        // 尝试解析时间字符串
+        const parsedTime = new Date(weighing_time);
+        // 验证是否为有效的日期对象
+        if (!isNaN(parsedTime.getTime())) {
+          validWeighingTime = parsedTime.toISOString();
+        } else {
+          console.warn('Unable to parse weighing_time:', weighing_time, 'Using current time instead');
+        }
+      }
+    }
+    
+    // Get device_id from authenticated device info
+    const deviceId = req.deviceInfo?.device_id || null;
+    
     // Insert the new weight record
     const result = db.prepare(`
       INSERT INTO weight_records 
       (weighRecordId, customer_id, customer_name, waste_type, bin_type, 
-       total_weight, bin_weight, net_weight, weighing_time, image_url)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       total_weight, bin_weight, net_weight, weighing_time, image_url, device_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       weighRecordId,
       customer.id,
@@ -132,14 +179,20 @@ router.post('/weight-records', authenticateApiKey, upload.single('image'), async
       parsedTotalWeight,
       binWeight,
       netWeight,
-      weighing_time || new Date().toISOString(),
-      imagePath
+      validWeighingTime,
+      imagePath,
+      deviceId
     );
+    
+    // Update the device's last_uploaded_at with the weighing_time from the record
+    if (deviceId) {
+      db.prepare('UPDATE devices SET last_uploaded_at = ? WHERE device_id = ?').run(validWeighingTime, deviceId);
+    }
     
     // Get the newly created weight record
     const newWeightRecord = db.prepare(`
       SELECT id, weighRecordId, customer_id, customer_name, waste_type, bin_type, 
-             total_weight, bin_weight, net_weight, weighing_time, image_url
+             total_weight, bin_weight, net_weight, weighing_time, image_url, device_id
       FROM weight_records
       WHERE id = ?
     `).get(result.lastInsertRowid);
@@ -152,7 +205,7 @@ router.post('/weight-records', authenticateApiKey, upload.single('image'), async
     });
   } catch (error) {
     console.error('Error creating weight record:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error', message: 'An error occurred while processing your request' });
   }
 });
 
@@ -162,7 +215,8 @@ router.post('/weight-records', authenticateApiKey, upload.single('image'), async
  * @apiGroup ExternalAPI
  * @apiDescription Retrieves a specific weight record by its weighRecordId
  * 
- * @apiHeader {String} X-API-KEY External system API key for authentication
+ * @apiHeader {String} X-DEVICE-ID Device ID for authentication
+ * @apiHeader {String} X-API-KEY Device API key for authentication
  * 
  * @apiParam {String} weighRecordId The unique identifier of the weight record
  * 
@@ -177,8 +231,9 @@ router.post('/weight-records', authenticateApiKey, upload.single('image'), async
  * @apiSuccess {Number} weightRecord.bin_weight Bin weight in kg
  * @apiSuccess {Number} weightRecord.net_weight Net weight in kg
  * @apiSuccess {String} weightRecord.weighing_time ISO datetime of weighing
+ * @apiSuccess {String} [weightRecord.device_id] Device ID that created the record
  */
-router.get('/weight-records/:weighRecordId', authenticateApiKey, (req, res) => {
+router.get('/weight-records/:weighRecordId', authenticateDevice, (req, res) => {
   try {
     const { weighRecordId } = req.params;
     
@@ -194,7 +249,7 @@ router.get('/weight-records/:weighRecordId', authenticateApiKey, (req, res) => {
              ROUND(total_weight, 1) as total_weight, 
              ROUND(bin_weight, 1) as bin_weight, 
              ROUND(net_weight, 1) as net_weight, 
-             weighing_time
+             weighing_time, device_id
       FROM weight_records
       WHERE weighRecordId = ?
     `).get(weighRecordId);
@@ -213,7 +268,7 @@ router.get('/weight-records/:weighRecordId', authenticateApiKey, (req, res) => {
     res.json(weightRecord);
   } catch (error) {
     console.error('Error retrieving weight record:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error', message: 'An error occurred while retrieving the weight record' });
   }
 });
 
@@ -223,7 +278,8 @@ router.get('/weight-records/:weighRecordId', authenticateApiKey, (req, res) => {
  * @apiGroup ExternalAPI
  * @apiDescription Updates specific fields of a weight record
  * 
- * @apiHeader {String} X-API-KEY External system API key for authentication
+ * @apiHeader {String} X-DEVICE-ID Device ID for authentication
+ * @apiHeader {String} X-API-KEY Device API key for authentication
  * 
  * @apiParam {String} weighRecordId The unique identifier of the weight record
  * 
@@ -244,7 +300,7 @@ router.get('/weight-records/:weighRecordId', authenticateApiKey, (req, res) => {
  * @apiSuccess {String} weightRecord.weighing_time ISO datetime of weighing
  * @apiSuccess {String} [weightRecord.image_url] URL to the weighing image
  */
-router.patch('/weight-records/:weighRecordId', authenticateApiKey, (req, res) => {
+router.patch('/weight-records/:weighRecordId', authenticateDevice, (req, res) => {
   try {
     const { weighRecordId } = req.params;
     const { waste_type, bin_type, bin_weight, net_weight } = req.body;
@@ -341,7 +397,7 @@ router.patch('/weight-records/:weighRecordId', authenticateApiKey, (req, res) =>
     res.json(updatedRecord);
   } catch (error) {
     console.error('Error updating weight record:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error', message: 'An error occurred while updating the weight record' });
   }
 });
 
